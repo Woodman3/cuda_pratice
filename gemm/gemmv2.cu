@@ -22,12 +22,12 @@ __global__ void gemm(T *a,T *b,T *c,int n,int k,int m){
     int by=blockIdx.y;
     int bdx=blockDim.x;
     int bdy=blockDim.y;
-    int ulrow = bx*bdx*BN+tx*TN; 
-    int ulcol = by*bdy*BM+ty*TM;
+    int ulrow = bx*BN; 
+    int ulcol = by*BM;
     int tid=OFFSET(tx,ty,bdy);
     __shared__ T sa[BN][STEP];
     __shared__ T sb[STEP][BM];
-    T tc[TN][TM]={0};
+    T tc[TN][TM]={0.0};
     int sacol_load = (tid&1) <<2; // %1  and *4
     int sarow_load = tid>>1;// /2
     int sbrow_load = tid>>5; // /32
@@ -36,8 +36,10 @@ __global__ void gemm(T *a,T *b,T *c,int n,int k,int m){
     int tnr = BN/TN; // threadnum of row
     int tnc = BM/TM; // threadnum of col
     for(int i=0;i<len;i++){
-        sa[sarow_load][sacol_load]=a[OFFSET(ulrow+sarow_load,sacol_load+(i*STEP),k)];
-        sb[sbrow_load][sbcol_load]=b[OFFSET(sbrow_load+(i*STEP),ulcol+sbcol_load,m)];
+        for(int j=0;j<4;j++){
+            sa[sarow_load][sacol_load+j]=a[OFFSET(ulrow+sarow_load,sacol_load+(i*STEP)+j,k)];
+            sb[sbrow_load][sbcol_load+j]=b[OFFSET(sbrow_load+(i*STEP),ulcol+sbcol_load+j,m)];
+        }
         __syncthreads();
         for(int row = 0;row<TN;row++){
             for(int col = 0;col<TM;col++){
@@ -50,7 +52,7 @@ __global__ void gemm(T *a,T *b,T *c,int n,int k,int m){
     }
     for(int row = 0;row<TN;row++){
         for(int col = 0;col<TM;col++){
-            c[OFFSET(ulrow+row,ulcol+col,m)]=tc[row][col];
+            c[OFFSET(ulrow+tx*TN+row,ulcol+ty*TM+col,m)]=tc[row][col];
         }
     }
 }
