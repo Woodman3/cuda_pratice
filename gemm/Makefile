@@ -1,14 +1,15 @@
 CC=nvcc
 CFLAGS= -arch=compute_86 -code=sm_86 -g -G
+TARGET=gemmv2
 
-all:gemm.o
+all:$(TARGET).o
 
-run:gemm.o
+run:$(TARGET).o
 	./$^
 
-dbg:gemm.o
+dbg:$(TARGET).o
 	cuda-gdb ./$^
 
-gemm.o:gemm.cu
+$(TARGET).o:$(TARGET).cu
 	$(CC) $(CFLAGS) $^ -o $@
 	

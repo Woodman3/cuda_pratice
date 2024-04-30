@@ -1,13 +1,13 @@
 #include<iostream>
 #include<fstream>
-#define OFFSET(row,col,R) ((row*R)+col)
+#define OFFSET(row,col,R) (((row)*(R))+(col))
 
 using namespace std;
 
 typedef double tt;
 
 template<typename T>
-__global__ void gemm(T *a,T *b,T *c,int m,int k,int n){
+__global__ void gemm(T *a,T *b,T *c,int n,int k,int m){
     int tx=threadIdx.x;
     int ty=threadIdx.y;
     int bx=blockIdx.x;
@@ -16,12 +16,12 @@ __global__ void gemm(T *a,T *b,T *c,int m,int k,int n){
     int bdy=blockDim.y;
     int x=bdx*bx+tx;
     int y=bdy*by+ty;
-    if(x>=m||y>=n)
+    if(x>=n||y>=m)
         return;
-    int id=OFFSET(x,y,n);
+    int id=OFFSET(x,y,m);
     T count=0;
     for(int i=0;i<k;i++){
-        count+=a[OFFSET(x,i,k)]*b[OFFSET(i,y,n)];
+        count+=a[OFFSET(x,i,k)]*b[OFFSET(i,y,m)];
     }
     c[id]=count;
 
@@ -32,16 +32,16 @@ int main(){
     ifstream fin;
     fin.open("./test");
     fin>>m>>k>>n;
-    tt *h_a = new tt[m*k];
-    tt *h_b = new tt[k*n];
-    tt *h_c = new tt[m*n];
-    tt *right = new tt[m*n];
+    tt *h_a = new tt[n*k];
+    tt *h_b = new tt[k*m];
+    tt *h_c = new tt[n*m];
+    tt *right = new tt[n*m];
     tt *d_a,*d_b,*d_c;
-    for(int i=0;i<m*k;i++)
+    for(int i=0;i<n*k;i++)
         fin>>h_a[i];
-    for(int i=0;i<k*n;i++)
+    for(int i=0;i<k*m;i++)
         fin>>h_b[i];
-    for(int i=0;i<m*n;i++)
+    for(int i=0;i<n*m;i++)
         fin>>right[i]; 
     cudaMalloc(&d_a,m*k*sizeof(tt));
     cudaMalloc(&d_b,k*n*sizeof(tt));
@@ -51,7 +51,7 @@ int main(){
     int blockx=16;
     int blocky=16;
     dim3 BlockRange(blockx,blocky);
-    dim3 GridRange(m/blockx+1,n/blocky+1);
+    dim3 GridRange(n/blockx+1,m/blocky+1);
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
