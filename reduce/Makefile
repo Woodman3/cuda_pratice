@@ -1,6 +1,6 @@
 CC=nvcc
 CFLAGS= -arch=compute_86 -code=sm_86 -g -G
-TARGET=gemm
+TARGET=reduce
 
 all:$(TARGET).o
 

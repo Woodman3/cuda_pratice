@@ -1,7 +1,7 @@
 import numpy as np
-n=512
-m=512
-k=512
+n=2048
+m=2048
+k=1024
 a=np.random.random((n,k))
 b=np.random.random((k,m))
 c=a.dot(b)

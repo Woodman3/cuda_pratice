@@ -3,6 +3,7 @@
 #include<float.h>
 #include"../check.cuh"
 #define OFFSET(row,col,R) (((row)*(R))+(col))
+#define FLOAT4(pointer) (reinterpret_cast<float4*>(&(pointer))[0])
 
 using namespace std;
 
@@ -33,16 +34,21 @@ __global__ void gemm(T *a,T *b,T *c,int n,int k,int m){
     int sbrow_load = tid>>5; // /32
     int sbcol_load =(tid & 31) <<2;// %32 and *4
     int len=(k+STEP-1)/STEP;
-    int tnr = BN/TN; // threadnum of row
-    int tnc = BM/TM; // threadnum of col
     for(int i=0;i<len;i++){
         for(int j=0;j<4;j++){
             sa[sarow_load][sacol_load+j]=a[OFFSET(ulrow+sarow_load,sacol_load+(i*STEP)+j,k)];
             sb[sbrow_load][sbcol_load+j]=b[OFFSET(sbrow_load+(i*STEP),ulcol+sbcol_load+j,m)];
         }
+        // int aload = OFFSET(ulrow+sarow_load,sacol_load+(i*STEP),k);
+        // int bload = OFFSET(sbrow_load+(i*STEP),ulcol+sbcol_load,m);
+        // FLOAT4(sa[sarow_load][sacol_load])=FLOAT4(a[aload]);
+        // FLOAT4(sb[sbrow_load][sbcol_load])=FLOAT4(b[bload]);
         __syncthreads();
+        #pragma unroll
         for(int row = 0;row<TN;row++){
+            #pragma unroll
             for(int col = 0;col<TM;col++){
+                #pragma unroll
                 for(int j=0;j<STEP;j++){
                     tc[row][col]+=sa[tx*TN+row][j]*sb[j][ty*TM+col];
                 }
@@ -50,7 +56,9 @@ __global__ void gemm(T *a,T *b,T *c,int n,int k,int m){
         }
         __syncthreads();
     }
+    #pragma unroll
     for(int row = 0;row<TN;row++){
+        #pragma unroll
         for(int col = 0;col<TM;col++){
             c[OFFSET(ulrow+tx*TN+row,ulcol+ty*TM+col,m)]=tc[row][col];
         }
