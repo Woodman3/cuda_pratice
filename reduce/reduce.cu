@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <random>
 
-template <unsigned int warpSize=32>
+#define WARP_SIZE 32
+
+template <unsigned int warpSize=WARP_SIZE>
 __forceinline__ __device__ float warp_reduce(float val) {
     for(int offset = warpSize>>1 ; offset > 0; offset >>= 1) {
         val += __shfl_down_sync(0xFFFFFFFF, val, offset);
@@ -9,34 +11,31 @@ __forceinline__ __device__ float warp_reduce(float val) {
     return val;
 }
 
-template<unsigned int threadNum = 256>
+template<unsigned int threadNum = 1024>
 __global__ void reduce_kernel(float* input, float* output, int size) {
-    __shared__ float shared[threadNum];
+    constexpr int numWarps = threadNum / WARP_SIZE;
+    __shared__ float shared[numWarps];
 
-    int tid = threadIdx.x;
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int warp = threadIdx.x / WARP_SIZE;
+    int lane = threadIdx.x % WARP_SIZE;
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
 
-    if (i < size) {
-        shared[tid] = input[i];
+    float sum = (tid < size) ? input[tid] : 0.0f;
+    for(int i = tid + stride; i < size; i += stride) {
+        sum += input[i];
     }
-    else {
-        shared[tid] = 0;
-    }
-
+    sum = warp_reduce(sum);
     __syncthreads();
+    if (lane == 0) 
+        shared[warp] = sum;
+    __syncthreads();
+    sum = (lane < numWarps) ? shared[lane] : 0.0f;
+    if (warp==0)
+        sum = warp_reduce(sum);
 
-    for (unsigned int stride = blockDim.x>>1; stride >= 32; stride >>= 1) {
-        if (tid < stride) {
-            shared[tid] += shared[tid + stride];
-        }
-        __syncthreads();
-    }
-
-    float val = shared[tid];
-    val = warp_reduce(val);
-
-    if (tid == 0) {
-        atomicAdd(output, val);
+    if (threadIdx.x == 0) {
+        atomicAdd(output, sum);
     }
 }
 
@@ -53,8 +52,8 @@ float reduce(float* input, int size) {
 
     cudaMemcpy(deviceInput, input, size * sizeof(float), cudaMemcpyHostToDevice);
 
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+    int threadsPerBlock = 1024;
+    int blocksPerGrid = 64;
     cudaEventRecord(start);
 
     reduce_kernel<<<blocksPerGrid, threadsPerBlock>>>(deviceInput, deviceOutput, size);
