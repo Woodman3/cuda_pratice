@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <random>
 
-template <unsigned int warpSize>
-__device__ float warp_reduce(float val) {
+template <unsigned int warpSize=32>
+__forceinline__ __device__ float warp_reduce(float val) {
     for(int offset = warpSize>>1 ; offset > 0; offset >>= 1) {
         val += __shfl_down_sync(0xFFFFFFFF, val, offset);
     }
@@ -10,7 +10,7 @@ __device__ float warp_reduce(float val) {
 }
 
 template<unsigned int threadNum = 256>
-__global__ void reduceKernel(float* input, float* output, int size) {
+__global__ void reduce_kernel(float* input, float* output, int size) {
     __shared__ float shared[threadNum];
 
     int tid = threadIdx.x;
@@ -25,15 +25,18 @@ __global__ void reduceKernel(float* input, float* output, int size) {
 
     __syncthreads();
 
-    for (unsigned int stride = blockDim.x>>1; stride > 0; stride >>= 1) {
+    for (unsigned int stride = blockDim.x>>1; stride >= 32; stride >>= 1) {
         if (tid < stride) {
             shared[tid] += shared[tid + stride];
         }
         __syncthreads();
     }
 
+    float val = shared[tid];
+    val = warp_reduce(val);
+
     if (tid == 0) {
-        atomicAdd(output, shared[0]);
+        atomicAdd(output, val);
     }
 }
 
@@ -44,12 +47,23 @@ float reduce(float* input, int size) {
     cudaMalloc((void**)&deviceInput, size * sizeof(float));
     cudaMalloc((void**)&deviceOutput, sizeof(float));
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
     cudaMemcpy(deviceInput, input, size * sizeof(float), cudaMemcpyHostToDevice);
 
     int threadsPerBlock = 256;
     int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+    cudaEventRecord(start);
 
-    reduceKernel<<<blocksPerGrid, threadsPerBlock>>>(deviceInput, deviceOutput, size);
+    reduce_kernel<<<blocksPerGrid, threadsPerBlock>>>(deviceInput, deviceOutput, size);
+
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    printf("Time: %f ms\n", milliseconds);
 
     float output;
     cudaMemcpy(&output, deviceOutput, sizeof(float), cudaMemcpyDeviceToHost);
@@ -72,7 +86,7 @@ float generateTestData(float* input, int size) {
     return r;
 }
 int main() {
-    int size = 1<<10;
+    int size = 1<<25;
     float* input = new float[size];
     float ans = generateTestData(input, size);
 
