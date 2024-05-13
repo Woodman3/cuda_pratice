@@ -6,6 +6,7 @@
 #include "dot.cuh"
 
 void cpu_dot(const float *a ,const float *b,float *c,int n  ){
+    *c = 0.0;
     for(int i = 0; i < n; i++){
         *c += a[i] * b[i];
     }
@@ -42,12 +43,6 @@ void dot_wrapper(const float* a, const float* b, int n) {
 
 
     // Start the timer
-
-
-    // Perform gemv operation using CUBLAS
-    float alpha = 1.0;
-
-    float beta = 0.0;
     cublasHandle_t handle; // Declare the CUBLAS handle
 
     // Initialize the CUBLAS library
@@ -82,7 +77,7 @@ void dot_wrapper(const float* a, const float* b, int n) {
     cudaMemcpy(h_c2, c2, sizeof(float), cudaMemcpyDeviceToHost);
     // Check the correctness of the result
     if (abs(*h_c1 - *h_c2) > 1e-4) {
-        std::cout<< h_c1 << " " << h_c2 <<" "<<h_c3<<std::endl;
+        std::cout<< *h_c1 << " " << *h_c2 <<" "<<*h_c3<<std::endl;
         std::cout << "Result is incorrect!" << std::endl;
     }else {
         std::cout << "Result is correct!" << std::endl;
