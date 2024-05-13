@@ -3,21 +3,7 @@
 #include <random>
 #include <cublas_v2.h>
 #include <curand.h>
-#define OFFSET(row,col,R) (((row)*(R))+(col))
-// Gemv function
-// x: n x 1 vector
-// A: m x n matrix
-// y: m x 1 vector
-__global__ void gemv(const float* A, const float* x, float* y, int m, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < m) {
-        float temp = 0.0;
-        for (int i = 0; i < n; i++) {
-            temp += A[OFFSET(idx,i,n)] * x[i];
-        }
-        y[idx]=temp;
-    }
-}
+#include "gemv.cuh"
 
 void cup_gemv(const float* A, const float* x, float* y, int m, int n){
     for(int i=0;i<m;i++){
@@ -30,7 +16,7 @@ void cup_gemv(const float* A, const float* x, float* y, int m, int n){
 
 
 // Wrapper function
-void gemvWrapper(const float* A, const float* x, int m, int n) {
+void dot_wrapper(const float* A, const float* x, int m, int n) {
 
     float *y1,*y2;
     cudaMalloc(&y1, m * sizeof(float));
@@ -43,9 +29,11 @@ void gemvWrapper(const float* A, const float* x, int m, int n) {
     // Start the timer
     cudaEventRecord(start);
     int blockSize = 256;
+    // dim3 blockSize = {32,8,1};
     int numBlocks = (m + blockSize - 1) / blockSize;
+    // dim3 numBlocks = {1, (m + blockSize.y - 1) / blockSize.y, 1};
     // Launch kernel
-    gemv<<<numBlocks, blockSize>>>(A, x, y1, m, n);
+    gpu_gemv<<<numBlocks, blockSize>>>(A, x, y1, m, n);
 
     // Stop the timer
     cudaEventRecord(stop);
@@ -72,7 +60,7 @@ void gemvWrapper(const float* A, const float* x, int m, int n) {
 
     cudaEventRecord(start);
     // Perform the matrix-vector multiplication using CUBLAS
-    cublasSgemv(handle, CUBLAS_OP_N, m, n, &alpha, A, m, x, 1, &beta, y2, 1);
+    cublasSgemv(handle, CUBLAS_OP_T, n, m, &alpha, A, n, x, 1, &beta, y2, 1);
 
     // Destroy the CUBLAS handle
     cublasDestroy(handle);
@@ -100,7 +88,7 @@ void gemvWrapper(const float* A, const float* x, int m, int n) {
     // Check the correctness of the result
     bool correct = true;
     for (int i = 0; i < m; i++) {
-        if (abs(h_y1[i] - h_y3[i]) > 1e-5) {
+        if (abs(h_y1[i] - h_y2[i]) > 1e-6) {
             std::cout<< h_y1[i] << " " << h_y2[i] <<" "<<h_y3[i]<<" "<<i<< std::endl;
             
             std::cout << "Result is incorrect!" << std::endl;
@@ -131,9 +119,16 @@ void generateData(float* A, float* x, int m, int n) {
 }
 
 int main() {
-    int m = 512; // Number of rows
-    int n = 32; // Number of columns
-
+    int m = 4096; // Number of rows
+    int n = 128; // Number of columns
+    // float *h_A = new float[m * n];
+    // float *h_x = new float[n];
+    // for (int i=0;i<m*n;i++){
+    //     h_A[i]=i;
+    // }
+    // for(int i=0;i<n;i++){
+    //     h_x[i]=i;
+    // }
     // Allocate memory for matrices and vectors
     float *A,*x ;
     cudaMalloc(&A, m * n * sizeof(float));
@@ -141,12 +136,13 @@ int main() {
 
     // Generate random data
     generateData(A, x, m, n);
+    // cudaMemcpy(A, h_A, m * n * sizeof(float), cudaMemcpyHostToDevice);
+    // cudaMemcpy(x, h_x, n * sizeof(float), cudaMemcpyHostToDevice);
 
     // Perform gemv operation
-    gemvWrapper(A, x, m, n);
+    dot_wrapper(A, x, m, n);
 
     // Print the result
-
 
     return 0;
 }
