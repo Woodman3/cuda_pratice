@@ -1,4 +1,4 @@
-#include"check.cuh"
+#include"common.cuh"
 #include<iostream>
 #include<stdio.h>
 #define N 10
